@@ -1,16 +1,18 @@
+# Test the implementation of gauss_Legendre quadrature for a uniform function (1 all over the domain) and for different 4-nodes quadrilateral element geometries.
+
 L = 1.0
 coords_elem_0L = [0.0 0.0 ;
                          0.0 L ;
                          L L ;
-                         L 0.0] # square
+                         L 0.0] # square (area = L^2)
 coords_elem_0L = [0.0 0.0 ;
                          0.0 L ;
                          L 2*L ;
-                         L 0.0] # cut rectangle
+                         L 0.0] # cut rectangle (area = (3/2)*L^2)
 coords_elem_0L = [0.0 0.0 ;
                   0.5 L ;
                   L L ;
-                  0.5 0.0] # parallelogram
+                  0.5 0.0] # parallelogram (area = (1/2)*L^2)
 
 
 function jaco(ζ,η,coords_elem_0L)
