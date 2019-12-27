@@ -4,6 +4,7 @@ using LinearAlgebra
 using SparseArrays
 
 # functions definition :
+"Solves for T at all times in t"
 function solve(T0,t,Δt,LG,RG,FG,bc_gnodes,bc_val)
     T = T0
     LGF = lu(LG) # UMFPACK sparse matrix LU factorisation
@@ -11,24 +12,38 @@ function solve(T0,t,Δt,LG,RG,FG,bc_gnodes,bc_val)
     for i in eachindex(t)
         @time begin
             # form RHS
-            mul!(b,RG,T) .+ FG
+            mul!(b,RG,T) .+ FG # in place matrix-vector multiplication to form b = RG*T
             # Apply bc on rhs :
             for ibc in eachindex(bc_gnodes)
                 b[bc_gnodes[ibc]] = bc_val[ibc]
             end
             # solve for T
             println("Solving for T at iteration $i/$(length(t)), time = $(t[1]+(i-1)*Δt)")
-            ldiv!(T,LGF,b)
+            ldiv!(T,LGF,b) # in place solving equivalent to out of place T = LGF\b. Accepts a factorized objet of LG
         end
     end
     return T
 end
 
+"Compute a gaussian initial 2D temperature field"
 get_T0_exp_2D(x_mat,y_mat,xc,yc,Tmax,σ)  = @. Tmax*exp(-((x_mat-xc)^2 + (y_mat-yc)^2)/σ^2)
-#get_T0_porte(x,val::Float64) = (0.3(x_max-x0)<=x<=0.7(x_max-x[1])) ? val : 0.0
 
-function get_el_gnodes(N_gnodesx, N_gnodesy, N_nodes)
-    gnodes_grid = reverse([((j-1)*N_gnodesx).+i for j in 1:N_gnodesy, i in 1:N_gnodesx],dims=1)
+"Returns a matrix containing the index of the global nodes"
+get_gnodes_grid(N_gnodesx, N_gnodesy) = reverse([((j-1)*N_gnodesx).+i for j in 1:N_gnodesy, i in 1:N_gnodesx],dims=1)
+
+"""
+    get_el_gnodes(N_gnodesx, N_gnodesy, N_nodes, N_elx, N_ely)
+
+Returns a matrix of dimension `(2*N_nodes, N_elx*N_ely)`, where N_nodes is the number of nodes per element face (2 with quadrilateral elements) and N_elx*N_ely is the total number of elements of the mesh. each `j` column of the returned matrix contains the indices of the global nodes defining the `jth element, following an antitrigonometric counting starting with the south-west node.
+
+# Examples
+```julia-repl
+julia> bar([1, 2], [1, 2])
+1
+```
+"""
+function get_el_gnodes(N_gnodesx, N_gnodesy, N_nodes, N_elx, N_ely)
+    gnodes_grid = get_gnodes_grid(N_gnodesx, N_gnodesy)
     el_gnodes = Matrix{Int}(undef,2*N_nodes,N_elx*N_ely)
     counter = 1
     for i = N_ely:-1:1
@@ -41,9 +56,10 @@ function get_el_gnodes(N_gnodesx, N_gnodesy, N_nodes)
             counter +=1
         end
     end
-    return gnodes_grid, el_gnodes
+    return el_gnodes
 end
 
+"returns a `2*N_gnodes matrix containing the cartesian 2D coordinates of all global nodes"
 function get_gnodes_coords(gnodes_grid,x_mat,y_mat,N_gnodes)
     x_vec = grid2gnode(x_mat)
     y_vec = grid2gnode(y_mat)
@@ -51,10 +67,14 @@ function get_gnodes_coords(gnodes_grid,x_mat,y_mat,N_gnodes)
     return gnodes_coords'
 end
 
+"returns a vectorized (global nodes indexed) representation of a discrete matricial field"
 grid2gnode(mat) = vec(reverse(mat',dims=2))
+
+"returns a vectorized (global nodes indexed) representation of a discrete matricial field"
 gnode2grid(vec, N_gnodesy) = reverse(reshape(vec,N_gnodesy,:),dims=2)'
 
-function get_grid_params(x0,y0,x_max,y_max,lx,ly,Δx_vals,Δy_vals,x_vals,y_vals, precision)
+" returns the matrices containing the coordinates of each nodes"
+function get_grid_coords(x0,y0,x_max,y_max,lx,ly,Δx_vals,Δy_vals,x_vals,y_vals, precision)
     x = Float64[x0]
     y = Float64[y0]
     count = 1
@@ -73,6 +93,16 @@ function get_grid_params(x0,y0,x_max,y_max,lx,ly,Δx_vals,Δy_vals,x_vals,y_vals
     return x_mat, y_mat
 end
 
+"returns distorded the `x_mat` and `y_mat` coordinates of the mesh by scaling each of those by the other one multiplied by `factor`"
+function distort_grid(x_mat,y_mat,factor)
+    x_mat_d = copy(x_mat)
+    y_mat_d = copy(y_mat)
+    y_mat_d[:,2:end] .= y_mat[:,2:end] .+ (x_mat[:,2:end]./maximum(x_mat)).*factor
+    x_mat_d[1:end-1,:] .= x_mat[1:end-1,:] .+ (y_mat[1:end-1,:]./maximum(y_mat)).*factor
+    return x_mat_d,y_mat_d
+end
+
+"Returns the jacobian matrix ``∂x/∂ζ evaluated as "
 function jaco(ζ,η,coords_elem_0L)
     return dN(ζ,η) * coords_elem_0L
 end
@@ -101,7 +131,8 @@ function main_numerical()
     cp_vec = fill(𝐶p,N_el)
 
     ## Matrix containing the global node number for node i and element j at index {ij} :
-    gnodes_grid, el_gnodes = get_el_gnodes(N_gnodesx, N_gnodesy, N_nodes)
+    gnodes_grid = get_gnodes_grid(N_gnodesx, N_gnodesy)
+    el_gnodes = get_el_gnodes(N_gnodesx, N_gnodesy, N_nodes, N_elx, N_ely)
 
     # gnodes global coords :
     gnodes_coords = get_gnodes_coords(gnodes_grid,x_mat,y_mat,N_gnodes)
@@ -194,7 +225,7 @@ end
 
 ### PARAMETERS ###
 ## Parameters definition :
-κx = 100.0   # acier : 50
+κx = 200.0   # acier : 50
     κy = 50.0
     ρ = 8000.0 # acier : 8000
     𝐶p = 1000.0 # acier : 1000
@@ -208,11 +239,12 @@ end
     x0, y0 = 0.0, 0.0
     x_max, y_max = 10.0, 10.0
     lx, ly = x_max-x0, y_max-y0
-    Δx_vals = [0.1, 0.05, 0.1]#[lx/50, lx/200, lx/50]
-    Δy_vals = [0.1, 0.05, 0.1]#[ly/50, ly/200, ly/50]
+    Δx_vals = [0.05,0.05,0.05]#[0.1, 0.05, 0.1]#[lx/50, lx/200, lx/50]
+    Δy_vals = [0.05,0.05,0.05]#[0.1, 0.05, 0.1]#[ly/50, ly/200, ly/50]
     x_vals = [3,7]#[3, 7]
     y_vals = [3,7]#[3, 7]
-    x_mat,y_mat = get_grid_params(x0,y0,x_max,y_max,lx,ly,Δx_vals,Δy_vals,x_vals,y_vals, 3)
+    x_mat, y_mat = get_grid_coords(x0,y0,x_max,y_max,lx,ly,Δx_vals,Δy_vals,x_vals,y_vals, 3)
+    x_mat, y_mat = distort_grid(x_mat,y_mat,3) # uncomment to distort the grid
     Δx = diff(x_mat, dims=2)
     Δy = -diff(y_mat, dims=1)
 
@@ -227,7 +259,7 @@ end
     N_gnodes = N_gnodesx * N_gnodesy
 
     ### Choice of shape functions and numerical integration
-    # Shape functions and their derivatives in terms of the local variable
+    # Shape functions and their derivatives in terms of local variables
     N1(ζ,η) = (1/4)*(1-ζ)*(1-η)
     N2(ζ,η) = (1/4)*(1-ζ)*(1+η)
     N3(ζ,η) = (1/4)*(1+ζ)*(1+η)
@@ -248,17 +280,21 @@ end
 
 # SOLVE :
 @time T0,T,LG = main_numerical();
-# Vizualize
+
+# Vizualize #
+#surface
 plt.figure()
     plt.surf(x_mat,y_mat,gnode2grid(T,N_gnodesy))
-    #plt.surf(x,y,gnode2grid(T0,N_gnodesy))
+
+# contourf
+plt.figure()
+    ax = plt.subplot()
+    ax.axis("equal")
+    plt.contourf(x_mat,y_mat,gnode2grid(T,N_gnodesy))
+    plt.plot(x_mat,y_mat,".r",markersize=0.5)
+
+# plot grid :
+plt.figure()
+    plt.plot(x_mat,y_mat,".r",markersize=1)
 
 rmse(Y1,Y2) = sqrt(sum((Y1.-Y2).^2)/length(Y1))
-# plot against analytical solution with
-analytical_sol(x,t,Tmax,σ,κ) = Tmax/(sqrt(1+(4*t*κ)/σ^2)) * exp(-x^2/(σ^2 + 4*t*κ))
-real_sol = analytical_sol.(x,lt,Tmax,σ,κ[1])
-
-plt.plot(x,real_sol,"--r",markersize=0.3)
-
-using UnicodePlots
-UnicodePlots.spy(LG)
