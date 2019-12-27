@@ -194,7 +194,7 @@ end
     t = 0:Δt:lt
 
     ### Choice of shape functions and numerical integration
-    # Shape functions and their derivatives in terms of the local variable
+    # Shape functions and their derivatives in terms of local variables
     N1(ζ,η) = (1/4)*(1-ζ)*(1-η)
     N2(ζ,η) = (1/4)*(1-ζ)*(1+η)
     N3(ζ,η) = (1/4)*(1+ζ)*(1+η)
@@ -222,10 +222,3 @@ plt.figure()
 
 rmse(Y1,Y2) = sqrt(sum((Y1.-Y2).^2)/length(Y1))
 # plot against analytical solution with
-analytical_sol(x,t,Tmax,σ,κ) = Tmax/(sqrt(1+(4*t*κ)/σ^2)) * exp(-x^2/(σ^2 + 4*t*κ))
-real_sol = analytical_sol.(x,lt,Tmax,σ,κ[1])
-
-plt.plot(x,real_sol,"--r",markersize=0.3)
-
-using UnicodePlots
-UnicodePlots.spy(LG)
