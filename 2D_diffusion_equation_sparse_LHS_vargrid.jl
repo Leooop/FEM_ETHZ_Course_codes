@@ -36,11 +36,6 @@ get_gnodes_grid(N_gnodesx, N_gnodesy) = reverse([((j-1)*N_gnodesx).+i for j in 1
 
 Returns a matrix of dimension `(2*N_nodes, N_elx*N_ely)`, where N_nodes is the number of nodes per element face (2 with quadrilateral elements) and N_elx*N_ely is the total number of elements of the mesh. each `j` column of the returned matrix contains the indices of the global nodes defining the `jth element, following an antitrigonometric counting starting with the south-west node.
 
-# Examples
-```julia-repl
-julia> bar([1, 2], [1, 2])
-1
-```
 """
 function get_el_gnodes(N_gnodesx, N_gnodesy, N_nodes, N_elx, N_ely)
     gnodes_grid = get_gnodes_grid(N_gnodesx, N_gnodesy)
