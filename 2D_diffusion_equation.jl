@@ -127,7 +127,7 @@ function main_numerical()
             ηᵢip_mat = fill(ηᵢ[ip],2,len)
 
             # MM matrix contribution from ip
-            MM .+= N(ζᵢ[ip],ηᵢ[ip]) * N(ζᵢ[ip],ηᵢ[ip])'
+            MM .+= N(ζᵢ[ip],ηᵢ[ip]) * N(ζᵢ[ip],ηᵢ[ip])' .* (detJip*Wᵢ[ip])
             #[ shape_funs[i](ζᵢ[ip],ηᵢ[ip])*shape_funs[j](ζᵢ[ip],ηᵢ[ip])*detJip*Wᵢ[ip] for i in 1:len, j in 1:len ]
 
             # KM matrix contribution from ip
@@ -151,8 +151,8 @@ function main_numerical()
             for i in 1:len
                 LG[gnodes_el[i,ielem],gnodes_el[j,ielem]] += L[i,j]
                 RG[gnodes_el[i,ielem],gnodes_el[j,ielem]] += R[i,j]
-                FG[gnodes_el[i,ielem]] += F[i]
             end
+            FG[gnodes_el[j,ielem]] += F[j]
         end
     end
 
@@ -172,48 +172,50 @@ end
 ### PARAMETERS ###
 ## Parameters definition :
 κ = 50.0   # acier : 50
-ρ = 8000.0 # acier : 8000
-𝐶p = 1000.0 # acier : 1000
-s = 0.0
-Tmax = 100.0
-σ = 1.0
-N_nodes = 2
-N_nodes_per_el = 4
-N_elx, N_ely = 100, 100
-N_el = N_elx*N_ely
-N_gnodesx = N_elx*(N_nodes-1)+1
-N_gnodesy = N_ely*(N_nodes-1)+1
-N_gnodes = N_gnodesx * N_gnodesy
+    ρ = 8000.0 # acier : 8000
+    𝐶p = 1000.0 # acier : 1000
+    s = 0.0
+    Tmax = 100.0
+    σ = 1.0
+    N_nodes = 2
+    N_nodes_per_el = 4
+    N_elx, N_ely = 30, 30
+    N_el = N_elx*N_ely
+    N_gnodesx = N_elx*(N_nodes-1)+1
+    N_gnodesy = N_ely*(N_nodes-1)+1
+    N_gnodes = N_gnodesx * N_gnodesy
 
-## Spatial and time domains :
-lx, ly = 10.0, 10.0
-x0, y0 = 0.0, 0.0
-Δx, Δy = lx/N_elx, lx/N_ely
+    ## Spatial and time domains :
+    lx, ly = 10.0, 10.0
+    x0, y0 = 0.0, 0.0
+    Δx, Δy = lx/N_elx, lx/N_ely
 
-Δt, lt = 50000.0, 360000.0
-x = x0:Δx:x0+lx
-y = y0:Δy:y0+ly
-t = 0:Δt:lt
+    Δt, lt = 17777.0, 1000000.0
+    x = x0:Δx:x0+lx
+    y = y0:Δy:y0+ly
+    t = 0:Δt:lt
+    x_mat = repeat(x',outer=(length(y),1))
+    y_mat = repeat(reverse(y),outer=(1,length(x)))
 
-### Choice of shape functions and numerical integration
-# Shape functions and their derivatives in terms of local variables
-N1(ζ,η) = (1/4)*(1-ζ)*(1-η)
-N2(ζ,η) = (1/4)*(1-ζ)*(1+η)
-N3(ζ,η) = (1/4)*(1+ζ)*(1+η)
-N4(ζ,η) = (1/4)*(1+ζ)*(1-η)
+    ### Choice of shape functions and numerical integration
+    # Shape functions and their derivatives in terms of local variables
+    N1(ζ,η) = (1/4)*(1-ζ)*(1-η)
+    N2(ζ,η) = (1/4)*(1-ζ)*(1+η)
+    N3(ζ,η) = (1/4)*(1+ζ)*(1+η)
+    N4(ζ,η) = (1/4)*(1+ζ)*(1-η)
 
-dN1dζ(ζ,η) = -(1/4)*(1-η)
-dN1dη(ζ,η) = -(1/4)*(1-ζ)
-dN2dζ(ζ,η) = -(1/4)*(1+η)
-dN2dη(ζ,η) = (1/4)*(1-ζ)
-dN3dζ(ζ,η) = (1/4)*(1+η)
-dN3dη(ζ,η) = (1/4)*(1+ζ)
-dN4dζ(ζ,η) = (1/4)*(1-η)
-dN4dη(ζ,η) = -(1/4)*(1+ζ)
+    dN1dζ(ζ,η) = -(1/4)*(1-η)
+    dN1dη(ζ,η) = -(1/4)*(1-ζ)
+    dN2dζ(ζ,η) = -(1/4)*(1+η)
+    dN2dη(ζ,η) = (1/4)*(1-ζ)
+    dN3dζ(ζ,η) = (1/4)*(1+η)
+    dN3dη(ζ,η) = (1/4)*(1+ζ)
+    dN4dζ(ζ,η) = (1/4)*(1-η)
+    dN4dη(ζ,η) = -(1/4)*(1+ζ)
 
-N(ζ,η) = [N1(ζ,η), N2(ζ,η), N3(ζ,η), N4(ζ,η)]
-dN(ζ,η) = [dN1dζ(ζ,η) dN2dζ(ζ,η) dN3dζ(ζ,η) dN4dζ(ζ,η) ;
-        dN1dη(ζ,η) dN2dη(ζ,η) dN3dη(ζ,η) dN4dη(ζ,η)]
+    N(ζ,η) = [N1(ζ,η), N2(ζ,η), N3(ζ,η), N4(ζ,η)]
+    dN(ζ,η) = [dN1dζ(ζ,η) dN2dζ(ζ,η) dN3dζ(ζ,η) dN4dζ(ζ,η) ;
+            dN1dη(ζ,η) dN2dη(ζ,η) dN3dη(ζ,η) dN4dη(ζ,η)]
 
 # SOLVE :
 @time T0,T,LG = main_numerical()
@@ -222,6 +224,11 @@ dN(ζ,η) = [dN1dζ(ζ,η) dN2dζ(ζ,η) dN3dζ(ζ,η) dN4dζ(ζ,η) ;
 plt.figure()
     plt.surf(x,y,gnode2grid(T,N_gnodesy))
     #plt.surf(x,y,gnode2grid(T0,N_gnodesy))
+plt.figure()
+    ax = plt.subplot()
+    ax.axis("equal")
+    plt.contourf(x_mat,y_mat,gnode2grid(T,N_gnodesy))
+    plt.plot(x_mat,y_mat,".r",markersize=0.5)
 
 rmse(Y1,Y2) = sqrt(sum((Y1.-Y2).^2)/length(Y1))
 # plot against analytical solution with

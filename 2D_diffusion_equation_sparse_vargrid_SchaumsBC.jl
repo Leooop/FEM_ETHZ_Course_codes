@@ -5,20 +5,46 @@ using SparseArrays
 
 # functions definition :
 "Solves for T at all times in t"
-function solve(T0,t,Δt,LG,RG,FG,bc_gnodes,bc_val)
+function solve_lu(T0,t,Δt,LG,RG,FG,bc_gnodes,bc_val,force_vec_bc_addition)
     T = T0
-    LGF = lu(LG) # UMFPACK sparse matrix LU factorisation
+    LGF = lu(LG)
+    # UMFPACK sparse matrix LU factorisation
     b = RG*T .+ FG
     for i in eachindex(t)
-        # form RHS
-        mul!(b,RG,T) .+ FG # in place matrix-vector multiplication to form b = RG*T
-        # Apply bc on rhs :
-        for ibc in eachindex(bc_gnodes)
-            b[bc_gnodes[ibc]] = bc_val[ibc]
-        end
-        # solve for T
-        (i%round(length(t)/100) == 0) && println("Solving for T at iteration $i/$(length(t)), time = $(t[1]+(i-1)*Δt)")
-        ldiv!(T,LGF,b) # in place solving equivalent to out of place T = LGF\b. Accepts a factorized objet of LG
+
+            # form RHS
+            mul!(b,RG,T) .+ FG # in place matrix-vector multiplication to form b = RG*T
+            # Apply bc on rhs :
+            b += force_vec_bc_addition # add terms that allowed us to remove ibc columns
+            for ibc in eachindex(bc_gnodes)
+                b[bc_gnodes[ibc]] = bc_val[ibc] # set dirichlet boundary value
+            end
+            # solve for T
+            (i%round(length(t)/100) == 0) && println("Solving for T at iteration $i/$(length(t)), time = $(t[1]+(i-1)*Δt)")
+            ldiv!(T,LGF,b) # in place solving equivalent to out of place T = LGF\b. Accepts a factorized objet of LG
+
+    end
+    return T
+end
+
+function solve_chol(T0,t,Δt,LG,RG,FG,bc_gnodes,bc_val,force_vec_bc_addition)
+    T = T0
+    LGF = cholesky(Symmetric(LG))
+    # UMFPACK sparse matrix LU factorisation
+    b = RG*T .+ FG
+    for i in eachindex(t)
+
+            # form RHS
+            mul!(b,RG,T) .+ FG # in place matrix-vector multiplication to form b = RG*T
+            # Apply bc on rhs :
+            b += force_vec_bc_addition # add terms that allowed us to remove ibc columns
+            for ibc in eachindex(bc_gnodes)
+                b[bc_gnodes[ibc]] = bc_val[ibc] # set dirichlet boundary value
+            end
+            # solve for T
+            (i%round(length(t)/100) == 0) && println("Solving for T at iteration $i/$(length(t)), time = $(t[1]+(i-1)*Δt)")
+            T = LGF\b
+
     end
     return T
 end
@@ -137,6 +163,7 @@ function main_numerical()
     bc_val = fill(0.0,length(bc_gnodes))
 
     #### Global arrays construction ####
+    ## !!!! Assembly can be improved by only filling upper or lower triangular matrices of MM and KM since these are symmetric.
     LG_I = Int[]
     LG_J = Int[]
     LG_V = Float64[]
@@ -144,6 +171,7 @@ function main_numerical()
     RG_J = Int[]
     RG_V = Float64[]
     FG = zeros(Float64,N_gnodes)
+
 
     for ielem in 1:N_el
         # Initializing local arrays
@@ -196,7 +224,6 @@ function main_numerical()
                 push!(RG_J, el_gnodes[j,ielem])
                 push!(RG_V, R[i,j])
                 #LG[el_gnodes[i,ielem],el_gnodes[j,ielem]] += L[i,j] # dense approach same for RG
-                
             end
             FG[el_gnodes[j,ielem]] += F[j]
         end
@@ -205,14 +232,29 @@ function main_numerical()
     LG = sparse(LG_I,LG_J,LG_V,N_gnodes,N_gnodes)
     RG = sparse(RG_I,RG_J,RG_V,N_gnodes,N_gnodes)
 
-    # implement boundary condition on LG :
+    ### implement boundary condition on LG : ###
+
+    force_vec_bc_addition = zeros(Float64,N_gnodes) # from schaum, removes the dependancy on Dirichlet nodes  when solving the livear system, and brings symmetry to the stiffness matrix
+
+    # Start by removing all the stiffness matrix entries that must be set to zero to apply dirichlet bc.
     for ibc in eachindex(bc_gnodes)
         LG[bc_gnodes[ibc],:] .= 0.0
-        LG[bc_gnodes[ibc],bc_gnodes[ibc]] = 1.0
     end
 
-    # Solve over t :
-    T = solve(T0,t,Δt,LG,RG,FG,bc_gnodes,bc_val)
+    # Now for each dirichlet boundary node, we store the contribution of the nodal variable to the RHS at each relevant row to be able to substract T[ibc]*LG[j,ibc] to b[j] in the solve function, and set all non-diagonal terms of LG[:,ibc] to zero.
+    for ibc in eachindex(bc_gnodes)
+        force_vec_bc_addition .-= bc_val[ibc].*LG[:,bc_gnodes[ibc]] # save terms to be added to b later on
+        LG[:,bc_gnodes[ibc]] .= 0.0 # remove ibc column
+        LG[bc_gnodes[ibc],bc_gnodes[ibc]] = 1.0 # set the diagonal term to 1
+    end
+
+
+    #### Solve over t : ####
+    if maximum(LG .- LG') <= 1e-10
+        T = solve_chol(T0,t,Δt,LG,RG,FG,bc_gnodes,bc_val,force_vec_bc_addition)
+    else
+        T = solve_lu(T0,t,Δt,LG,RG,FG,bc_gnodes,bc_val,force_vec_bc_addition)
+    end
 
     return T0,T,LG
 end
@@ -233,16 +275,16 @@ end
     x0, y0 = 0.0, 0.0
     x_max, y_max = 10.0, 10.0
     lx, ly = x_max-x0, y_max-y0
-    Δx_vals = [0.2,0.4,0.2]#[0.1, 0.05, 0.1]#[lx/50, lx/200, lx/50]
-    Δy_vals = [0.2,0.4,0.2]#[0.1, 0.05, 0.1]#[ly/50, ly/200, ly/50]
+    Δx_vals = [0.1,0.1,0.1]#[0.1, 0.05, 0.1]#[lx/50, lx/200, lx/50]
+    Δy_vals = [0.1,0.1,0.1]#[0.1, 0.05, 0.1]#[ly/50, ly/200, ly/50]
     x_vals = [4,6]#[3, 7]
     y_vals = [4,6]#[3, 7]
     x_mat, y_mat = get_grid_coords(x0,y0,x_max,y_max,lx,ly,Δx_vals,Δy_vals,x_vals,y_vals, 3)
-    #x_mat, y_mat = distort_grid(x_mat,y_mat,3) # uncomment to distort the grid
+    x_mat, y_mat = distort_grid(x_mat,y_mat,3) # uncomment to distort the grid
     Δx = diff(x_mat, dims=2)
     Δy = -diff(y_mat, dims=1)
 
-    Δt, lt = 1600.0, 100000.0
+    Δt, lt = 160.0, 100000.0
     t = 0:Δt:lt
 
     ## Others Params
@@ -276,16 +318,16 @@ end
 @time T0,T,LG = main_numerical();
 
 # Vizualize #
-#surface
-plt.figure()
-    plt.surf(x_mat,y_mat,gnode2grid(T,N_gnodesy))
-
 # contourf
 plt.figure()
     ax = plt.subplot()
     ax.axis("equal")
     plt.contourf(x_mat,y_mat,gnode2grid(T,N_gnodesy))
     plt.plot(x_mat,y_mat,".r",markersize=0.5)
+
+#surface
+plt.figure()
+    plt.surf(x_mat,y_mat,gnode2grid(T,N_gnodesy))
 
 # plot grid :
 plt.figure()

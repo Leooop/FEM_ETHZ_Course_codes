@@ -118,7 +118,7 @@ function main_numerical()
             detJip = det(Jip)
 
             # MM matrix contribution from ip
-            MM .+= N(ζᵢ[ip],ηᵢ[ip]) * N(ζᵢ[ip],ηᵢ[ip])'
+            MM .+= N(ζᵢ[ip],ηᵢ[ip]) * N(ζᵢ[ip],ηᵢ[ip])' .* (detJip*Wᵢ[ip])
             #[ shape_funs[i](ζᵢ[ip],ηᵢ[ip])*shape_funs[j](ζᵢ[ip],ηᵢ[ip])*detJip*Wᵢ[ip] for i in 1:len, j in 1:len ]
 
             # KM matrix contribution from ip
@@ -147,8 +147,9 @@ function main_numerical()
                 push!(RG_J, gnodes_el[j,ielem])
                 push!(RG_V, R[i,j])
                 #LG[gnodes_el[i,ielem],gnodes_el[j,ielem]] += L[i,j] # dense approach same for RG
-                FG[gnodes_el[i,ielem]] += F[i]
+                
             end
+            FG[el_gnodes[j,ielem]] += F[j]
         end
     end
 
@@ -177,7 +178,7 @@ end
     σ = 1.0
     N_nodes = 2
     N_nodes_per_el = 4
-    N_elx, N_ely = 200, 200
+    N_elx, N_ely = 100, 100
     N_el = N_elx*N_ely
     N_gnodesx = N_elx*(N_nodes-1)+1
     N_gnodesy = N_ely*(N_nodes-1)+1
@@ -188,10 +189,12 @@ end
     x0, y0 = 0.0, 0.0
     Δx, Δy = lx/N_elx, lx/N_ely
 
-    Δt, lt = 1000000.0, 100000000.0
+    Δt, lt = 100.0, 100000.0
     x = x0:Δx:x0+lx
     y = y0:Δy:y0+ly
+    x_mat = repeat(x',outer=(length(y),1))
     t = 0:Δt:lt
+    y_mat = repeat(reverse(y),outer=(1,length(x)))
 
     ### Choice of shape functions and numerical integration
     # Shape functions and their derivatives in terms of local variables
@@ -217,8 +220,14 @@ end
 @time T0,T,LG = main_numerical();
 # Vizualize
 plt.figure()
-    plt.surf(x,y,gnode2grid(T,N_gnodesy))
+    plt.surf(x,y,gnode2grid(T0,N_gnodesy))
     #plt.surf(x,y,gnode2grid(T0,N_gnodesy))
+    # contourf
+plt.figure()
+    ax = plt.subplot()
+    ax.axis("equal")
+    plt.contourf(x_mat,y_mat,gnode2grid(T0,N_gnodesy))
+    plt.plot(x_mat,y_mat,".r",markersize=0.5)
 
 rmse(Y1,Y2) = sqrt(sum((Y1.-Y2).^2)/length(Y1))
 # plot against analytical solution with
